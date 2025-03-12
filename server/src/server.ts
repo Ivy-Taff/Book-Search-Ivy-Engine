@@ -1,87 +1,54 @@
-require('dotenv').config();
-const express = require('express');
-const { ApolloServer } = require('@apollo/server');
-const { expressMiddleware } = require('@apollo/server/express4');
-const { json } = require('body-parser');
-const cors = require('cors');
-const mongoose = require('mongoose');
+import decode from 'jwt-decode';
 
-// Import your models (adjust paths based on your project structure)
-const { User, Book } = require('./models');
-
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/booksearch', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-
-const db = mongoose.connection;
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
-
-// Define GraphQL type definitions
-const typeDefs = `
-  type Book {
-    _id: ID!
-    title: String!
-    authors: [String]
-    description: String
-    image: String
-    link: String
+class AuthService {
+  // retrieve data saved in token
+  getProfile() {
+    return decode(this.getToken());
   }
 
-  type User {
-    _id: ID!
-    username: String!
-    email: String!
-    savedBooks: [Book]
+  // check if the user is still logged in
+  loggedIn() {
+    // Checks if there is a saved token and it's still valid
+    const token = this.getToken();
+    // use type coersion to check if token is NOT undefined and the token is NOT expired
+    return !!token && !this.isTokenExpired(token);
   }
 
-  type Query {
-    getBooks: [Book]
-    getUser(id: ID!): User
+  // check if the token has expired
+  isTokenExpired(token: string) {
+    try {
+      const decoded: any = decode(token);
+      if (decoded.exp < Date.now() / 1000) {
+        return true;
+      } else {
+        return false;
+      }
+    } catch (err) {
+      return false;
+    }
   }
 
-  type Mutation {
-    addBook(title: String!, authors: [String], description: String, image: String, link: String): Book
-    removeBook(id: ID!): Book
+  // retrieve token from localStorage
+  getToken() {
+    // Retrieves the user token from localStorage
+    return localStorage.getItem('id_token');
   }
-`;
 
-// Define GraphQL resolvers
-const resolvers = {
-  Query: {
-    getBooks: async () => await Book.find(),
-    getUser: async (_, { id }) => await User.findById(id),
-  },
-  Mutation: {
-    addBook: async (_, args) => {
-      const book = new Book(args);
-      await book.save();
-      return book;
-    },
-    removeBook: async (_, { id }) => {
-      return await Book.findByIdAndDelete(id);
-    },
-  },
-};
+  // set token to localStorage and reload page to homepage
+  login(idToken: string) {
+    // Saves user token to localStorage
+    localStorage.setItem('id_token', idToken);
 
-// Initialize Express
-const app = express();
+    window.location.assign('/');
+  }
 
-// Initialize Apollo Server
-const server = new ApolloServer({ typeDefs, resolvers });
-
-async function startServer() {
-  await server.start();
-  
-  app.use(cors());
-  app.use(json());
-  app.use('/graphql', expressMiddleware(server));
-
-  const PORT = process.env.PORT || 4000;
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running at http://localhost:${PORT}/graphql`);
-  });
+  // clear token from localStorage and force logout with reload
+  logout() {
+    // Clear user token and profile data from localStorage
+    localStorage.removeItem('id_token');
+    // this will reload the page and reset the state of the application
+    window.location.assign('/');
+  }
 }
 
-startServer();
+export default new AuthService();
